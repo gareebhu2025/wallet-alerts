@@ -4,66 +4,62 @@ import os
 
 app = Flask(__name__)
 
-# ===== ENV VARIABLES =====
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-# ===== TELEGRAM SENDER =====
-def send_telegram(msg: str):
+def send_telegram(msg):
     if not BOT_TOKEN or not CHAT_ID:
-        print("❌ BOT_TOKEN or CHAT_ID missing")
         return
 
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": msg,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": True
-    }
-    requests.post(url, json=payload, timeout=10)
+    requests.post(
+        url,
+        json={
+            "chat_id": CHAT_ID,
+            "text": msg,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True
+        },
+        timeout=10
+    )
 
-# ===== WEBHOOK ENDPOINT =====
+@app.route("/", methods=["GET"])
+def home():
+    return "Wallet Alert Server Running", 200
+
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.json or {}
 
-    txid = data.get("txid", "N/A")
-    chain = data.get("chain", "Unknown")
-    symbol = data.get("currency", "N/A")
-
     amount = float(data.get("amount", 0))
-    usd = float(data.get("amount_usd", 0))
+    if amount <= 0:
+        return jsonify({"ignored": True})
 
+    symbol = data.get("currency", "UNKNOWN")
+    chain = data.get("chain", "UNKNOWN")
+    usd = float(data.get("amount_usd", 0))
     address = data.get("address", "N/A")
+    txid = data.get("txid", "N/A")
     status = data.get("status", "pending").upper()
     tx_url = data.get("tx_url", "")
-
-    # 🛑 Anti-spam (ignore zero / dust tx)
-    if amount <= 0 or usd <= 0:
-        return jsonify({"ignored": True})
 
     msg = f"""
 💰 <b>{symbol} Incoming ({status})</b>
 
-🌐 <b>Network:</b> {chain}
-📦 <b>Amount:</b> {amount} {symbol}
-💵 <b>Value:</b> ${usd:.2f}
+🔗 <b>Network:</b> {chain}
+💵 <b>Amount:</b> {amount} {symbol}
+💲 <b>Value:</b> ${usd:.2f}
 
-👛 <b>Wallet:</b>
+📍 <b>Wallet:</b>
 <code>{address}</code>
 
-🔗 <a href="{tx_url}">View Transaction</a>
+🔍 <a href="{tx_url}">View Transaction</a>
 """
 
-    send_telegram(msg.strip())
-    return jsonify({"ok": True})
+    send_telegram(msg)
+    return jsonify({"ok": True}), 200
 
-# ===== HEALTH CHECK =====
-@app.route("/")
-def home():
-    return "Wallet Alert Server Running"
-
-# ===== REQUIRED FOR RAILWAY =====
+# IMPORTANT: Railway needs this
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
