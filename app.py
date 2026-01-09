@@ -7,43 +7,57 @@ app = Flask(__name__)
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 CHAT_ID = os.environ.get("CHAT_ID")
 
-def send_telegram(text):
+
+def send_telegram(msg):
     if not BOT_TOKEN or not CHAT_ID:
         return
+
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    requests.post(url, json={
-        "chat_id": CHAT_ID,
-        "text": text,
-        "parse_mode": "HTML"
-    })
+    requests.post(
+        url,
+        json={
+            "chat_id": CHAT_ID,
+            "text": msg,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True
+        },
+        timeout=10
+    )
+
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.json or {}
 
+    txid = data.get("txid", "N/A")
+    chain = data.get("chain", "Unknown")
     symbol = data.get("currency", "N/A")
-    chain = data.get("chain", "N/A")
     amount = float(data.get("amount", 0))
     usd = float(data.get("amount_usd", 0))
     address = data.get("address", "N/A")
+    status = data.get("status", "pending").upper()
     tx_url = data.get("tx_url", "")
 
     if amount <= 0:
         return jsonify({"ignored": True})
 
     msg = (
-        "💰 <b>Incoming Transaction</b>\n\n"
-        f"🪙 Coin: <b>{symbol}</b>\n"
+        f"💰 <b>{symbol} Incoming ({status})</b>\n\n"
         f"🌐 Network: <b>{chain}</b>\n"
-        f"💵 Amount: <b>{amount} {symbol}</b>\n"
-        f"💲 USD: <b>${usd:.2f}</b>\n\n"
+        f"💸 Amount: <b>{amount} {symbol}</b>\n"
+        f"💵 Value: <b>${usd:.2f}</b>\n\n"
         f"👛 Wallet:\n<code>{address}</code>\n\n"
-        f"🔗 {tx_url}"
+        f"🔗 <a href='{tx_url}'>View Transaction</a>"
     )
 
     send_telegram(msg)
     return jsonify({"ok": True})
 
+
 @app.route("/")
 def home():
     return "Wallet Alerts Running"
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
